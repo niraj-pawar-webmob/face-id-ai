@@ -6,3 +6,4 @@ main_img.py
 stream_match.py
 __pycache__
 .venv/
+.venv
