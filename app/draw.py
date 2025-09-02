@@ -24,6 +24,7 @@ def _as_dict(model_or_dict):
     return model_or_dict
 
 def render_match_debug_image(img_bgr, matches, unmatched):
+# def render_match_debug_image(img_bgr, matches):
     vis = img_bgr.copy()
     # matched: green
     for m in matches:
@@ -41,14 +42,14 @@ def render_match_debug_image(img_bgr, matches, unmatched):
             pts = np.array(contour, dtype=np.int32).reshape(-1, 1, 2)
             cv2.polylines(vis, [pts], True, (0,200,0), 1)
     # unmatched: red
-    for u in unmatched:
-        ud = _as_dict(u)
-        box = ud.get("bbox", [])
-        draw_box(vis, box, (0, 0, 220), 2)
-        score = ud.get("score", 0.0)
-        draw_text_bg(vis, f"unmatched | {score:.2f}", (int(box[0]), int(box[1]) - 8), bg_color=(0,0,120))
-        contour = ud.get("contour") or []
-        if contour:
-            pts = np.array(contour, dtype=np.int32).reshape(-1, 1, 2)
-            cv2.polylines(vis, [pts], True, (0,0,220), 1)
+    # for u in unmatched:
+    #     ud = _as_dict(u)
+    #     box = ud.get("bbox", [])
+    #     draw_box(vis, box, (0, 0, 220), 2)
+    #     score = ud.get("score", 0.0)
+    #     draw_text_bg(vis, f"unmatched | {score:.2f}", (int(box[0]), int(box[1]) - 8), bg_color=(0,0,120))
+    #     contour = ud.get("contour") or []
+    #     if contour:
+    #         pts = np.array(contour, dtype=np.int32).reshape(-1, 1, 2)
+    #         cv2.polylines(vis, [pts], True, (0,0,220), 1)
     return encode_jpeg_base64(vis)

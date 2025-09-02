@@ -16,6 +16,6 @@ class MatchFace(BaseModel):
     metadata: Dict[str, Any] = {}
 
 class MatchResponse(BaseModel):
-    matches: List[MatchFace]
+    data: List[MatchFace]
     unmatched: Optional[List[Dict[str, Any]]] = None
     debug_image_base64: Optional[str] = None

@@ -1,4 +1,5 @@
-from typing import Optional, List, Dict
+﻿from typing import Optional, List, Dict
+import logging
 import json
 import numpy as np
 from fastapi import APIRouter, File, UploadFile, Form
@@ -52,7 +53,8 @@ async def enroll_person(
     except Exception as e:
         return JSONResponse({"ok": False, "person_id": person_id, "error": str(e)}, status_code=400)
 
-@router.post("/match", response_model=MatchResponse, response_model_exclude_none=True)
+# The below given api doesn't return the contours when multiple matches are found in a single img.
+@router.post("/match_face", response_model=MatchResponse, response_model_exclude_none=True)
 async def match_faces(
     threshold: Optional[float] = Form(None),
     return_image: bool = Form(False),
@@ -93,9 +95,73 @@ async def match_faces(
                     "contour": contour_pts, "landmarks_count": lm_count
                 })
 
-        response = {"matches": matches_out, "unmatched": unmatched_out}
+        # response = {"matches": matches_out, "unmatched": unmatched_out}
+        # The below given line is to be uncommented when you require unmatched_out
+        response = {"data": matches_out}
+
+        # 👇 add annotated image only when requested
         if return_image:
-            response["debug_image_base64"] = render_match_debug_image(img, matches_out, unmatched_out)
+            # The below given code to be included when you need to convert the image file to base64
+            dbg_b64 = render_match_debug_image(img, matches_out, unmatched_out)
+            response["debug_image_base64"] = dbg_b64
+
+            # response["raw_image"] = img
+
         return response
+    
+    except Exception as e:
+        return JSONResponse({"matches": [], "unmatched": [], "error": str(e)}, status_code=400)
+
+@router.post("/match", response_model=MatchResponse, response_model_exclude_none=True)
+async def match_faces(
+    threshold: Optional[float] = Form(None),
+    return_image: bool = Form(False),
+    file: Optional[UploadFile] = File(None),
+    image_base64: Optional[str] = Form(None)
+):
+    th = float(threshold) if threshold is not None else MATCH_THRESHOLD
+    try:
+        img = await decode_image_from_input(file, image_base64)
+       
+        dets = engine_faces.detect_and_embed(img)
+        bboxes = [d["bbox"] for d in dets]
+
+        # NEW: one landmark set per detection (or None)
+        landmarks_per_det = engine_faces.landmarks_for_bboxes(img, bboxes, expand=0.25)
+
+        matches_out: List[MatchFace] = []
+        unmatched_out: List[Dict[str, Any]] = []
+
+        for det, best_pts in zip(dets, landmarks_per_det):
+            bbox = det["bbox"]
+            emb  = det["embedding"]
+
+            contour_pts = landmarks_convex_hull(best_pts) if best_pts is not None else []
+            lm_count = int(best_pts.shape[0]) if best_pts is not None else 0
+
+            pid, meta, score = best_match(emb, th)
+            if pid is not None:
+                matches_out.append(MatchFace(
+                    person_id=pid,
+                    score=score,
+                    bbox=bbox,
+                    contour=contour_pts,
+                    landmarks_count=lm_count,
+                    metadata=meta or {}
+                ))
+            else:
+                unmatched_out.append({
+                    "score": float(score),
+                    "bbox": bbox,
+                    "contour": contour_pts,
+                    "landmarks_count": lm_count
+                })
+
+        response = {"data": matches_out}  # add "unmatched": unmatched_out if you want it
+        if return_image:
+            dbg_b64 = render_match_debug_image(img, matches_out, unmatched_out)
+            response["debug_image_base64"] = dbg_b64
+        return response
+
     except Exception as e:
         return JSONResponse({"matches": [], "unmatched": [], "error": str(e)}, status_code=400)

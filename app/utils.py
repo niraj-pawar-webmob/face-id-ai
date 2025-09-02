@@ -4,9 +4,10 @@ import cv2
 from typing import Optional
 from fastapi import UploadFile
 
+
 async def decode_image_from_input(file: Optional[UploadFile], b64: Optional[str]) -> np.ndarray:
     if file is not None:
-        data = await file.read()  # async read
+        data = await file.read()
     elif b64 is not None:
         data = base64.b64decode(b64)
     else:
