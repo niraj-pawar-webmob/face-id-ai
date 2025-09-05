@@ -303,6 +303,8 @@ async def match_faces(
         if return_image:
             response["debug_image_base64"] = render_match_debug_image(img, matches_out, unmatched)
 
+        t_cp = time.perf_counter()
+        print(f"[perf] complete process: {(t0 - t_cp)*1000:.1f} ms")
         return response
     except Exception as e:
         return JSONResponse({"data": [], "unmatched": [], "error": str(e)}, status_code=400)
