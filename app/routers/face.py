@@ -179,7 +179,7 @@
 # The below given code has rearranged order of the operations
 
 import time
-from typing import Optional, List, Dict
+from typing import Optional, List
 import json
 from fastapi import APIRouter, File, UploadFile, Form
 from fastapi.responses import JSONResponse
@@ -195,18 +195,34 @@ from ..db import SessionLocal
 
 router = APIRouter()
 
-@router.get("/health")
+@router.get("/health", tags=["Health"])
 def health():
+    """Health check endpoint to verify the API is running."""
     return {"ok": True}
 
-@router.post("/enroll", response_model=EnrollResponse, response_model_exclude_none=True)
+
+@router.post(
+    "/enroll",
+    response_model=EnrollResponse,
+    response_model_exclude_none=True,
+    tags=["Enrollment"],
+    summary="Enroll a new person"
+)
 async def enroll_person(
-    person_id: str = Form(...),
-    metadata: Optional[str] = Form(None),
-    return_image: bool = Form(False),
-    file: Optional[UploadFile] = File(None),
-    image_base64: Optional[str] = Form(None)
+    person_id: str = Form(..., description="Unique ID for the person"),
+    metadata: Optional[str] = Form(None, description="Optional JSON metadata about the person"),
+    return_image: bool = Form(False, description="Return debug image with bounding box overlay"),
+    file: Optional[UploadFile] = File(None, description="Image file input"),
+    image_base64: Optional[str] = Form(None, description="Alternative: Base64 encoded image string")
 ):
+    """
+    Enroll a new person into the database.
+
+    - **person_id**: Required unique identifier for the person.
+    - **metadata**: JSON string with any extra information.
+    - **file**: Image upload (face will be detected & embedded).
+    - **image_base64**: Base64 image alternative.
+    """
     try:
         img = await decode_image_from_input(file, image_base64)
         dets = engine_faces.detect_and_embed(img, max_faces=1)
@@ -219,39 +235,51 @@ async def enroll_person(
 
         resp = {"ok": True, "person_id": person_id}
         if return_image:
-            # quick overlay using match renderer (only bbox)
             resp["bbox"] = bbox
             resp["debug_image_base64"] = render_match_debug_image(img, [], [{"bbox": bbox, "score": 1.0}])
         return resp
     except Exception as e:
         return JSONResponse({"ok": False, "person_id": person_id, "error": str(e)}, status_code=400)
 
-@router.post("/match", response_model=MatchResponse, response_model_exclude_none=True)
+
+@router.post(
+    "/match",
+    response_model=MatchResponse,
+    response_model_exclude_none=True,
+    tags=["Matching"],
+    summary="Match face(s) against enrolled persons"
+)
 async def match_faces(
-    threshold: Optional[float] = Form(None),
-    return_image: bool = Form(False),
-    return_contours: bool = Form(True),
-    max_faces: Optional[int] = Form(None),
-    file: Optional[UploadFile] = File(None),
-    image_base64: Optional[str] = Form(None)
+    threshold: Optional[float] = Form(None, description="Match threshold (default: from config)"),
+    return_image: bool = Form(False, description="Return debug image with overlay"),
+    return_contours: bool = Form(True, description="Return facial contours for matched faces"),
+    max_faces: Optional[int] = Form(None, description="Maximum faces per frame to detect"),
+    file: Optional[UploadFile] = File(None, description="Image file input"),
+    image_base64: Optional[str] = Form(None, description="Alternative: Base64 encoded image string")
 ):
+    """
+    Match one or more faces against the enrolled database.
+
+    - **threshold**: Optional threshold override.
+    - **return_image**: Whether to return annotated debug image.
+    - **return_contours**: Include facial contours in output.
+    - **file**: Image upload.
+    - **image_base64**: Base64 image alternative.
+    """
     th = float(threshold) if threshold is not None else MATCH_THRESHOLD
     t0 = time.perf_counter()
     try:
         img = await decode_image_from_input(file, image_base64)
-        # Optional resize to speed up
         img_proc, scale = resize_for_inference(img)
         inv = (1.0 / scale) if scale != 1.0 else 1.0
 
-        # 1) Detect & embed (limit faces early)
         k = max_faces or MAX_FACES_PER_FRAME
         dets = engine_faces.detect_and_embed(img_proc, max_faces=k)
         t_det = time.perf_counter()
         print(f"[perf] detect+embed: {(t_det - t0)*1000:.1f} ms  (faces={len(dets)})")
 
-        # 2) Match all faces using a single DB session
-        matches_meta = []  # (i, pid, meta, score)
-        unmatched = []     # {"bbox": ..., "score": ...}
+        matches_meta = []
+        unmatched = []
         with SessionLocal() as s:
             s.begin()
             for i, det in enumerate(dets):
@@ -260,10 +288,7 @@ async def match_faces(
                     matches_meta.append((i, pid, meta or {}, float(score)))
                 else:
                     unmatched.append({"bbox": det["bbox"], "score": float(score)})
-        t_match = time.perf_counter()
-        print(f"[perf] matching: {(t_match - t_det)*1000:.1f} ms")
 
-        # 3) Landmarks only for matched faces (and only if requested)
         matches_out: List[MatchFace] = []
         contours_needed = return_contours or return_image
         if contours_needed and matches_meta:
@@ -271,11 +296,7 @@ async def match_faces(
             pts_list = engine_faces.landmarks_for_bboxes(img_proc, matched_bboxes, expand=0.25)
         else:
             pts_list = [None] * len(matches_meta)
-        t_lm = time.perf_counter()
-        if contours_needed:
-            print(f"[perf] landmarks: {(t_lm - t_match)*1000:.1f} ms")
 
-        # 4) Build response (unscale if resized)
         for (i, pid, meta, score), pts in zip(matches_meta, pts_list):
             bbox = dets[i]["bbox"]
             if scale != 1.0:
@@ -291,20 +312,14 @@ async def match_faces(
                 metadata=meta
             ))
 
-        # Also include unmatched (optional)
         if scale != 1.0:
             for u in unmatched:
                 u["bbox"] = [int(b*inv) for b in u["bbox"]]
 
-        # response = {"data": matches_out, "unmatched": unmatched if unmatched else None}
         response = {"data": matches_out}
-
-        # 5) Optional overlay image (draw on original-size image for consistency)
         if return_image:
             response["debug_image_base64"] = render_match_debug_image(img, matches_out, unmatched)
 
-        t_cp = time.perf_counter()
-        print(f"[perf] complete process: {(t0 - t_cp)*1000:.1f} ms")
         return response
     except Exception as e:
         return JSONResponse({"data": [], "unmatched": [], "error": str(e)}, status_code=400)
