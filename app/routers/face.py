@@ -251,7 +251,8 @@ async def enroll_person(
 )
 async def match_faces(
     threshold: Optional[float] = Form(None, description="Match threshold (default: from config)"),
-    return_image: bool = Form(False, description="Return debug image with overlay"),
+    # You can set the value of return_image to False when you do not want the debugged base64 image
+    return_image: bool = Form(True, description="Return debug image with overlay"), 
     return_contours: bool = Form(True, description="Return facial contours for matched faces"),
     max_faces: Optional[int] = Form(None, description="Maximum faces per frame to detect"),
     file: Optional[UploadFile] = File(None, description="Image file input"),
