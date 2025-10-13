@@ -4,6 +4,7 @@ from pydantic import BaseModel, Field
 class EnrollResponse(BaseModel):
     ok: bool
     person_id: str
+    exists: bool                      # The key denotes if the face is present in the image or not.
     bbox: Optional[List[int]] = None
     debug_image_base64: Optional[str] = None
 
@@ -16,6 +17,6 @@ class MatchFace(BaseModel):
     metadata: Dict[str, Any] = {}
 
 class MatchResponse(BaseModel):
-    data: List[MatchFace]
+    matches: List[MatchFace]
     unmatched: Optional[List[Dict[str, Any]]] = None
     debug_image_base64: Optional[str] = None
