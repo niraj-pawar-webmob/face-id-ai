@@ -12,7 +12,7 @@ from ..utils import decode_image_from_input, resize_for_inference
 from ..engine import engine_faces
 from ..geometry import landmarks_convex_hull
 from ..draw import render_match_debug_image
-
+from ..crud import upsert_person, person_exists
 from ..matcher import best_match_in_session
 from ..db import SessionLocal
 
