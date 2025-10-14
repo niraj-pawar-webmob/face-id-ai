@@ -4,7 +4,7 @@ from pydantic import BaseModel, Field
 class EnrollResponse(BaseModel):
     ok: bool
     person_id: str
-    exists:                             # The key denotes if the face is present in the image or not.
+    exists: bool                            # The key denotes if the face is present in the image or not.
     bbox: Optional[List[int]] = None
     debug_image_base64: Optional[str] = None
     error: Optional[str] = None          # <-- NEW: carry error text with 200 status
